@@ -153,7 +153,7 @@
             <span class="status-badge" style="background:${color}">${p.stage}</span>
             <span class="card-name">${p.name}</span>
             <div class="card-info">
-                🏢 <b>발주(협력):</b> ${p.client}(${p.partner})<br>
+                🏢 <b>발주(관계):</b> ${p.client}(${p.partner})<br>
                 📐 <b>규모:</b> ${p.floor} / ${p.area}<br>
                 📦 <b>물량:</b> ${volText}<br>
                 🛠 <b>패키징:</b> ${p.pkg}
@@ -167,7 +167,7 @@
         const tooltipHtml = `
             <div style="font-weight:700; color:${color}; font-size:13px; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom:5px;">${p.name}</div>
             <div style="font-size:11px; line-height:1.6;">
-                🏢 <b>발주(협력):</b> ${p.client}(${p.partner})<br>
+                🏢 <b>발주(관계):</b> ${p.client}(${p.partner})<br>
                 🏠 <b>규모:</b> ${p.area} / ${p.floor}<br>
                 📦 <b>수량:</b> <b style="color:#333;">${volText}</b><br>
                 🛠 <b>패키징:</b> <span style="color:${color}; font-weight:bold;">${p.pkg}</span>
@@ -200,7 +200,7 @@
                 const labelHtml = `
                     <div class="draggable-label-container" style="border-color: ${m.color};">
                         <span class="label-title" style="color: ${m.color};">${m.data.name}</span>
-                        <span class="section-tag">[발주 및 협력]</span>
+                        <span class="section-tag">[발주 및 관계]</span>
                         <span class="label-content">${m.data.client}(${m.data.partner})</span>
                         <span class="section-tag">[규모 및 패키징]</span>
                         <span class="label-content">${m.data.floor} / ${m.data.area}</span>
@@ -225,3 +225,4 @@
 </script>
 </body>
 </html>
+
