@@ -169,8 +169,19 @@
         minZoom: 7,
         maxZoom: 18,
         maxBounds: [[32.0, 123.0], [44.0, 133.0]],
-        maxBoundsViscosity: 1.0
+        maxBoundsViscosity: 1.0,
+        // 부드러운 휠 줌: 네이티브 줌 애니메이션(CSS 트랜스폼, GPU 가속) + 완만한 단계
+        scrollWheelZoom: true,
+        zoomAnimation: true,
+        zoomSnap: 0.25,           // 소수 줌 허용 → 덜 튐
+        zoomDelta: 0.5,
+        wheelPxPerZoomLevel: 140, // 휠 한 칸당 줌 변화량 축소 → 완만
+        wheelDebounceTime: 25
     }).setView([37.52, 127.00], 11);
+
+    // 프로젝트 핀 전용 pane — 항상 다른 오버레이(경계/권역/용도지역·지구 등) 위에 표시
+    map.createPane('projectPins');
+    map.getPane('projectPins').style.zIndex = 640;
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
@@ -193,6 +204,62 @@
         KEY: VWORLD_KEY,
         DOMAIN: VWORLD_DOMAIN
     });
+
+    const districtLayer = L.tileLayer.wms("https://api.vworld.kr/req/wms", {
+        layers: "lt_c_uq112",     // 용도지구
+        styles: "lt_c_uq112",
+        format: "image/png",
+        transparent: true,
+        version: "1.3.0",
+        crs: L.CRS.EPSG3857,
+        opacity: 0.55,
+        KEY: VWORLD_KEY,
+        DOMAIN: VWORLD_DOMAIN
+    });
+
+    /* 지구단위계획구역: VWorld 데이터 API(벡터)로 로드 → 호버 시 구역명 표시.
+       WMS는 래스터라 호버가 안 되고, 현재 키는 데이터 API만 동작하므로 벡터로 처리.
+       CORS 미지원 → JSONP(script 태그 + callback)로 우회. */
+    const duPlanGroup = L.layerGroup();
+    let duPlanActive = false, duPlanSeq = 0;
+
+    // 줌/이동 중 반복 호출 방지 — 이동이 멎은 뒤 한 번만 로드
+    let duPlanTimer = null;
+    function loadDuPlanDebounced() {
+        clearTimeout(duPlanTimer);
+        duPlanTimer = setTimeout(loadDuPlan, 350);
+    }
+
+    function loadDuPlan() {
+        if (!duPlanActive) return;
+        if (map.getZoom() < 11) { duPlanGroup.clearLayers(); return; }  // 과도한 축소 시 생략
+        const b = map.getBounds();
+        const box = `BOX(${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()})`;
+        const cb = "vwDuPlanCb" + (++duPlanSeq);
+        const s = document.createElement("script");
+        window[cb] = function (res) {
+            delete window[cb]; s.remove();
+            if (!duPlanActive) return;
+            try {
+                const fc = res.response.result.featureCollection;
+                duPlanGroup.clearLayers();
+                L.geoJSON(fc, {
+                    style: { color: "#E53935", weight: 1.5, fillColor: "#E53935", fillOpacity: 0.12 },
+                    onEachFeature: (f, l) => {
+                        const p = f.properties || {};
+                        const nm = p.dgm_nm || p.lcl_nam || "지구단위계획구역";
+                        l.bindTooltip(nm, { sticky: true, direction: "top", opacity: 0.95 });
+                    }
+                }).addTo(duPlanGroup);
+            } catch (e) { /* 데이터 없음/오류 */ }
+        };
+        s.onerror = function () { delete window[cb]; s.remove(); };
+        s.src = "https://api.vworld.kr/req/data?service=data&version=2.0&request=GetFeature"
+            + "&format=json&size=1000&data=lt_c_upisuq161&crs=EPSG:4326"
+            + "&geomFilter=" + encodeURIComponent(box)
+            + "&key=" + VWORLD_KEY + "&domain=" + VWORLD_DOMAIN + "&callback=" + cb;
+        document.body.appendChild(s);
+    }
 
     const projectLayer = L.layerGroup().addTo(map);
     const draggableGroup = L.layerGroup().addTo(map);
@@ -266,7 +333,7 @@
         card.onclick = () => { map.flyTo([p.lat, p.lng], 14); pin.openTooltip(); };
         document.getElementById('sidebar-list').appendChild(card);
 
-        const pin = L.circleMarker([p.lat, p.lng], { radius: 7, fillColor: color, color: "#fff", weight: 2, fillOpacity: 0.9 }).addTo(projectLayer);
+        const pin = L.circleMarker([p.lat, p.lng], { radius: 7, fillColor: color, color: "#fff", weight: 2, fillOpacity: 0.9, pane: "projectPins" }).addTo(projectLayer);
         const tooltipHtml = `
             <div style="font-weight:700; color:${color}; font-size:13px; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom:5px;">${p.name}</div>
             <div style="font-size:11px; line-height:1.6;">
@@ -322,7 +389,20 @@
                 <div class="lu-legend" style="display:none; margin:4px 0 4px 22px;">
                     ${luLegend.map(l => `<div class="legend-item" style="margin-bottom:3px;"><span class="lp-swatch" style="width:10px;height:10px;border-color:${l.c};background:${l.c};margin-right:6px;"></span>${l.t}</div>`).join('')}
                 </div>
-                <label class="disabled"><input type="checkbox" disabled><span class="lp-swatch" style="border-color:#CBD5E0; background:#F0F0F0;"></span>지구<span class="lp-soon">준비중</span></label>`;
+                <label>
+                    <input type="checkbox" class="district-chk">
+                    <span class="lp-swatch" style="border-color:#7E57C2; background:repeating-linear-gradient(45deg,#EDE7F6,#EDE7F6 3px,#D1C4E9 3px,#D1C4E9 6px);"></span>
+                    용도지구 <span class="lp-soon" style="color:#1565C0;">VWorld</span>
+                </label>
+                <div class="du-legend" style="display:none; margin:4px 0 4px 22px; font-size:10px; color:#718096; line-height:1.6;">
+                    경관·미관·방화·방재·고도·보존·취락·개발진흥·특정용도제한 지구<br>
+                    <span style="color:#A0AEC0;">색상은 VWorld 표준 렌더링을 따릅니다</span>
+                </div>
+                <label>
+                    <input type="checkbox" class="duplan-chk">
+                    <span class="lp-swatch" style="border-color:#E53935; background:repeating-linear-gradient(45deg,#FFEBEE,#FFEBEE 3px,#FFCDD2 3px,#FFCDD2 6px);"></span>
+                    지구단위계획구역 <span class="lp-soon" style="color:#1565C0;">VWorld</span>
+                </label>`;
 
             div.innerHTML = html;
 
@@ -350,6 +430,40 @@
                 } else {
                     map.removeLayer(landUseLayer);
                     luLegendEl.style.display = "none";
+                }
+            });
+            const duLegendEl = div.querySelector('.du-legend');
+            div.querySelector('.district-chk').addEventListener('change', function () {
+                if (this.checked) {
+                    if (VWORLD_KEY === "YOUR_VWORLD_KEY_HERE") {
+                        alert("VWorld API 키가 필요합니다.\n\nindex.html의 VWORLD_KEY 값에 발급받은 키를 입력하세요.\n(https://www.vworld.kr → 오픈API → 인증키 발급, WMS/WFS)");
+                        this.checked = false;
+                        return;
+                    }
+                    districtLayer.addTo(map);
+                    duLegendEl.style.display = "block";
+                } else {
+                    map.removeLayer(districtLayer);
+                    duLegendEl.style.display = "none";
+                }
+            });
+            div.querySelector('.duplan-chk').addEventListener('change', function () {
+                if (this.checked) {
+                    if (VWORLD_KEY === "YOUR_VWORLD_KEY_HERE") {
+                        alert("VWorld API 키가 필요합니다.\n\nindex.html의 VWORLD_KEY 값에 발급받은 키를 입력하세요.");
+                        this.checked = false;
+                        return;
+                    }
+                    duPlanActive = true;
+                    duPlanGroup.addTo(map);
+                    map.on("moveend", loadDuPlanDebounced);
+                    loadDuPlan();
+                } else {
+                    duPlanActive = false;
+                    map.off("moveend", loadDuPlanDebounced);
+                    clearTimeout(duPlanTimer);
+                    duPlanGroup.clearLayers();
+                    map.removeLayer(duPlanGroup);
                 }
             });
             return div;
