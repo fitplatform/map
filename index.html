@@ -32,7 +32,30 @@
         .sidebar { width: 340px; display: flex; flex-direction: column; background: #ffffff; border-left: 1px solid var(--border); z-index: 2; box-shadow: -2px 0 10px rgba(0,0,0,0.03); }
         .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); background: #fcfcfc; }
         .sidebar-content { padding: 10px; overflow-y: auto; flex: 1; background: #f9f9f9; }
-        body.full-map-mode .sidebar { display: none; }
+        body.full-map-mode .sidebar, body.full-map-mode .leftbar { display: none; }
+
+        /* 좌측 수직 분석 바 */
+        .leftbar { width: 250px; flex-shrink: 0; display: flex; flex-direction: column; gap: 0;
+            background: #ffffff; border-right: 1px solid var(--border); z-index: 2;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.03); overflow-y: auto; }
+        .leftbar-section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+        .lb-title { font-size: 12px; font-weight: 700; color: #2d3748; margin-bottom: 12px; }
+        .year-display { font-size: 13px; color: #718096; margin-bottom: 8px; }
+        .year-display #year-cur { font-size: 26px; font-weight: 800; color: var(--accent); margin-right: 4px; }
+        #year-range { accent-color: var(--accent); cursor: pointer; margin: 2px 0; }
+        .year-ticks { display: flex; justify-content: space-between; font-size: 9px; color: #A0AEC0; margin-top: 2px; }
+        .year-count { margin-top: 10px; font-size: 12px; font-weight: 600; color: #4a5568;
+            background: #F5F7FA; border-radius: 6px; padding: 8px 10px; text-align: center; }
+        .year-count b { color: var(--accent); font-size: 15px; }
+        .pie-wrap { display: flex; justify-content: center; }
+        .pie-legend { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+        .pie-legend .pl-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #4a5568; }
+        .pie-legend .pl-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+        .rate-row { margin-bottom: 10px; }
+        .rate-head { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; }
+        .rate-head b { color: #2d3748; } .rate-head span { font-weight: 700; }
+        .rate-bar { height: 7px; border-radius: 4px; background: #EDF2F7; overflow: hidden; }
+        .rate-fill { height: 100%; border-radius: 4px; transition: width .3s; }
 
         .sidebar-content::-webkit-scrollbar { width: 6px; }
         .sidebar-content::-webkit-scrollbar-track { background: transparent; }
@@ -119,19 +142,36 @@
 </header>
 
 <div class="layout">
+    <div class="leftbar">
+        <div class="leftbar-section">
+            <div class="lb-title">📅 연도별 누적 검토</div>
+            <div class="year-display"><span id="year-cur">–</span><small>년까지 누적</small></div>
+            <input type="range" id="year-range" style="width:100%;">
+            <div class="year-ticks" id="year-ticks"></div>
+            <div id="year-count" class="year-count">–</div>
+        </div>
+        <div class="leftbar-section">
+            <div class="lb-title">🧭 권역 비율</div>
+            <div class="pie-wrap"><svg id="pie" viewBox="0 0 120 120" width="120" height="120"></svg></div>
+            <div id="pie-legend" class="pie-legend"></div>
+        </div>
+        <div class="leftbar-section">
+            <div class="lb-title">🎯 권역별 진행건수<small style="font-weight:400; color:#A0AEC0;"> (진행중)</small></div>
+            <div id="rates"></div>
+        </div>
+    </div>
     <div id="map"></div>
     <div class="sidebar">
         <div class="sidebar-header">
             <h3 style="font-size: 15px; margin:0;">📋 프로젝트 리스트</h3>
-            <p style="font-size: 11px; color: #999; margin: 5px 0 0 0;">총 14개의 프로젝트가 등록되어 있습니다.</p>
+            <p id="proj-count" style="font-size: 11px; color: #999; margin: 5px 0 0 0;">프로젝트 로딩 중…</p>
         </div>
         
         <div class="legend">
             <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">단계별 안내</div>
-            <div class="legend-item"><div class="legend-color" style="background:#D84315;"></div> 제조/협약 (진행)</div>
-            <div class="legend-item"><div class="legend-color" style="background:#FB8C00;"></div> 발주 준비 (대기)</div>
-            <div class="legend-item"><div class="legend-color" style="background:#1565C0;"></div> 설계 단계 (기획)</div>
-            <div class="legend-item"><div class="legend-color" style="background:#42A5F5;"></div> 컨설팅/검토 (사전)</div>
+            <div class="legend-item"><div class="legend-color" style="background:#2E7D32;"></div> spec-in 성공</div>
+            <div class="legend-item"><div class="legend-color" style="background:#F9A825;"></div> 진행중</div>
+            <div class="legend-item"><div class="legend-color" style="background:#9E9E9E;"></div> 세일즈 실패</div>
         </div>
 
         <div class="sidebar-content" id="sidebar-list"></div>
@@ -140,30 +180,18 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    function getStepColor(stage) {
-        if (stage.includes("제조") || stage.includes("협약")) return "#D84315";
-        if (stage.includes("발주")) return "#FB8C00";
-        if (stage.includes("설계")) return "#1565C0";
-        if (stage.includes("컨설팅")) return "#42A5F5";
-        return "#9E9E9E";
-    }
+    // 3단계 분류: 색상은 엑셀 셀 색상 기준 (초록=성공, 노랑=진행중, 무색=실패)
+    const CLS_META = {
+        success: { color: "#2E7D32", label: "spec-in 성공" },
+        ongoing: { color: "#F9A825", label: "진행중" },
+        fail:    { color: "#9E9E9E", label: "세일즈 실패" }
+    };
+    const clsColor = c => (CLS_META[c] || CLS_META.fail).color;
+    const clsLabel = c => (CLS_META[c] || CLS_META.fail).label;
+    const fmtN = n => (n === null || n === undefined || n === "") ? "" : Number(n).toLocaleString();
+    const fmtArea = n => (n === null || n === undefined || n === "") ? "" : Number(n).toLocaleString() + "㎡";
 
-    const projects = [
-        { id: 1, name: "서울대 68-1관 리모델링", client: "서울대", partner: "탄소중립단", area: "475㎡", floor: "지상4층", vol: "33", pkg: "+공조+Grid+ICT", stage: "제조", lat: 37.4533, lng: 126.9571 },
-        { id: 2, name: "성남 정수장 리모델링", client: "수자원공사", partner: "-", area: "514㎡", floor: "지상2층", vol: "74(91)", pkg: "+공조+Grid+ICT", stage: "물품사용협약준비", lat: 37.4127, lng: 127.1087 },
-        { id: 3, name: "광명학온 공원관리동", client: "경기도시공사", partner: "솔루션비즈팀", area: "660㎡", floor: "지상2층", vol: "58", pkg: "대안검토중", stage: "발주대기중", lat: 37.4101, lng: 126.8635 },
-        { id: 4, name: "태평로빌딩 FIT 리모델링", client: "이지스자산운용", partner: "삼성전자", area: "44,035㎡", floor: "지하7/지상26", vol: "3,097", pkg: "대안검토중", stage: "기본설계", lat: 37.5630, lng: 126.9757 },
-        { id: 5, name: "서울역 업무지구 컨설팅", client: "이지스", partner: "삼성물산", area: "122,542㎡", floor: "지하9/지상34", vol: "276", pkg: "대안검토중", stage: "컨설팅", lat: 37.5563, lng: 126.9744 },
-        { id: 6, name: "동서울터미널 FIT 컨설팅", client: "신세계", partner: "삼성전자", area: "383,074㎡", floor: "지하7/지상43", vol: "506", pkg: "대안검토중", stage: "컨설팅", lat: 37.5356, lng: 127.0957 },
-        { id: 7, name: "ASML 원삼면 Office", client: "ASML 코리아", partner: "삼우/해안", area: "32,000㎡", floor: "지하4/지상10", vol: "1100", pkg: "대안검토중", stage: "발주대기중", lat: 37.1543, lng: 127.3182 },
-        { id: 8, name: "크래프톤 C3 신축", client: "크래프톤", partner: "시스템 랩", area: "9,600㎡", floor: "지하4/지상11", vol: "252", pkg: "+공조+Grid+ICT", stage: "사전컨설팅", lat: 37.5408, lng: 127.0574 },
-        { id: 9, name: "애플타워", client: "애플에이앤엠", partner: "-", area: "4,741㎡", floor: "지하6/지상17", vol: "검토중", pkg: "검토중", stage: "사전컨설팅", lat: 37.5105, lng: 127.0790 },
-        { id: 10, name: "강남 358타워 리모델링", client: "HDC 자산운용", partner: "미래/이지스", area: "37,597㎡", floor: "지하7/지상20", vol: "1523", pkg: "+공조+FTU+ICT", stage: "사전컨설팅", lat: 37.4950, lng: 127.0297 },
-        { id: 11, name: "논현동 개발 FIT 검토", client: "신세계 센트럴", partner: "해안/건원", area: "45,116㎡", floor: "지하7/지상20", vol: "1926", pkg: "+공조+FTU+ICT", stage: "사전컨설팅", lat: 37.5111, lng: 127.0225 },
-        { id: 12, name: "삼성동 168 업무시설", client: "두나무", partner: "캡스톤/삼우", area: "34,527㎡", floor: "지하9/지상28", vol: "500", pkg: "대안검토중", stage: "사전컨설팅", lat: 37.5103, lng: 127.0629 },
-        { id: 13, name: "관수8지구 재개발", client: "NH 투자증권", partner: "한림/KCC", area: "50,823㎡", floor: "지하8/지상25", vol: "1,150", pkg: "+공조+FTU+ICT", stage: "사전컨설팅", lat: 37.5685, lng: 126.9900 },
-        { id: 14, name: "역삼 SI 타워", client: "이지스자산운용", partner: "-", area: "66,202㎡", floor: "지하8/지상25", vol: "1960", pkg: "대안검토중", stage: "사전컨설팅", lat: 37.5015, lng: 127.0377 }
-    ];
+    const projects = [{"name":"RE200홍보관","cls":"success","year":25,"client":"경기도시공사","b2":"B2G","order":"제안입찰","po":"이신재","addr":"광명시 가학동 및 시흥시 논곡동 일원","sales":29.5,"floors":"지상 2층","area":660.0,"use":"?","units":58.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"턴키 컨소시엄(W/대보건설) 구성 예정","lat":37.423792,"lng":126.869954},{"name":"동서울복합개발","cls":"success","year":25,"client":"(주)신세계동서울피에프브이","b2":"B2B","order":"일반수주","po":"김태완","addr":"광진구 구의동 546-1","sales":null,"floors":"지하 7층 / 지상 43층","area":383074.0,"use":"업무시설","units":506.0,"pkg":"공조 · ICT","status":"공조기 Mock-up","lat":37.534022,"lng":127.093597},{"name":"삼성중공업 판교 R&D센터","cls":"success","year":25,"client":"삼성중공업","b2":"B2B","order":"일반수주","po":"이민경","addr":"성남시 분당구 판교로 227번길 23","sales":null,"floors":"지하2층 / 지상 8층","area":57460.52,"use":"업무시설","units":1533.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"컨설팅 완료","lat":37.404452,"lng":127.09893},{"name":"서울대학교 탄소중립 파일럿프로젝트(68-1동) FIT Platform 적용 공사","cls":"success","year":25,"client":"서울대학교","b2":"B2G","order":"일반수주","po":"조준영","addr":"관악구 관악로 1","sales":7.3,"floors":"지상 4층","area":475.0,"use":"업무시설","units":33.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"7/10 준공(예정)","lat":37.459643,"lng":126.954934},{"name":"성남정수장 관리동 리뉴얼","cls":"success","year":25,"client":"수자원공사","b2":"B2G","order":"제안입찰","po":"조준영","addr":"성남시 수정구 사송로 97","sales":19.0,"floors":"지상 2층","area":514.0,"use":"업무시설","units":74.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"실시설계도서 납품","lat":37.4449,"lng":127.1389},{"name":"역삼 SI 타워 사전설계용역 (기획설계)","cls":"success","year":25,"client":"이지스자산운용","b2":"B2B","order":"일반수주","po":"김태완","addr":"강남구 역삼동 679-4","sales":null,"floors":"지하 8층 / 지상 25층","area":66202.39,"use":"업무시설","units":1960.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"홀딩","lat":37.501621,"lng":127.037728},{"name":"크래프톤 C3 신축","cls":"success","year":26,"client":"크래프톤","b2":"B2B","order":"일반수주","po":"한상은","addr":"성수동 2 가 322-6 번지외 1 필지","sales":74.37,"floors":"지하 4층 / 지상 11층","area":9547.49,"use":"업무시설","units":270.0,"pkg":"스킨 · 공조 · ICT","status":"시공사 선정 완료 계약 대기","lat":37.552569,"lng":127.046231},{"name":"ASML 원삼면 New Office 신축","cls":"ongoing","year":26,"client":"ASML","b2":"B2B","order":"제안입찰","po":"원태용","addr":"용인시 처인구 원삼면 독성리 983","sales":null,"floors":"지하 1층 / 지상 8층","area":32000.0,"use":"업무시설","units":1100.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"8/7 기술제안 제출","lat":37.162388,"lng":127.319405},{"name":"RCC","cls":"ongoing","year":26,"client":"로우로우","b2":"B2B","order":"일반수주","po":"김대순","addr":"성수동 2가 309-144","sales":50.3,"floors":"지하 1층 / 지상 10층","area":2826.4,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"발주처 의사결정 대기","lat":37.552569,"lng":127.046231},{"name":"삼성동 168번지 업무시설(두나무사옥)","cls":"ongoing","year":25,"client":"두나무\n캡스톤자산운용","b2":"B2B","order":"","po":"김대순","addr":"강남구 삼성동 168-1,2,20번지","sales":null,"floors":"지하 9층 / 지상 28층","area":34527.0,"use":"업무시설","units":500.0,"pkg":"","status":"해외설계사 설계진행중","lat":37.510368,"lng":127.062973},{"name":"용인동백 로보틱스 실증센터","cls":"ongoing","year":26,"client":"삼성물산㈜","b2":"B2B","order":"","po":"이신재","addr":"용인시 기흥구 중동 1025번지","sales":null,"floors":"지상 3층","area":453.6,"use":"업무시설","units":99.0,"pkg":"스킨 · ICT","status":"검토진행中","lat":37.257952,"lng":127.166471},{"name":"태평로빌딩 FIT Platform 적용 리모델링","cls":"ongoing","year":24,"client":"국민은행\n(이지스자산운용㈜)","b2":"B2B","order":"일반수주","po":"양준영","addr":"중구 서소문동 111","sales":null,"floors":"지하 7층 / 지상 26층","area":44035.47,"use":"업무시설","units":3097.0,"pkg":"스킨 · 공조 · ICT","status":"서울시건축경관심의완료 후 홀딩","lat":37.562935,"lng":126.975714},{"name":"H-Modular Lab PoC 협업","cls":"fail","year":26,"client":"현대엔지니어링","b2":"B2B","order":"","po":"김대순","addr":"충남 당진시 송악읍 고대리 167-123 (현대제철 당진연구소)","sales":null,"floors":"지상 2층","area":400.0,"use":"TESTBED","units":2.0,"pkg":"","status":"","lat":36.98272,"lng":126.736555},{"name":"K-water 울산권 관리동 확보사업","cls":"fail","year":25,"client":"수자원공사","b2":"B2B","order":"경쟁수주","po":"이신재","addr":"울산시 운주군 삼남읍 신화리 1904-10","sales":null,"floors":"지하 3층 / 지상  7층","area":6167.06,"use":"업무시설","units":660.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"공모 완료 (미당선)","lat":35.453,"lng":129.13},{"name":"KY빌딩","cls":"fail","year":25,"client":"코람코자산신탁","b2":"B2B","order":"간의검토","po":"조준영","addr":"용산구 한강로3가 40-17외 4","sales":null,"floors":"지하 4층 / 지상 15층","area":8250.41,"use":"업무시설","units":588.0,"pkg":"스킨 · 공조 · ICT","status":"종료","lat":37.524277,"lng":126.962825},{"name":"NC 글로벌 RDI 센터","cls":"fail","year":24,"client":"NC","b2":"B2B","order":"일반수주","po":"김대순","addr":"경기 성남시 분당구 삼평동 641번지","sales":null,"floors":"지하 8층 / 지상 14층","area":182354.0,"use":"업무시설","units":2684.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.396982,"lng":127.108402},{"name":"NH농협캐피탈빌딩","cls":"fail","year":24,"client":"NH 캐피탈","b2":"B2B","order":"일반수주","po":"김대순","addr":"영등포구 여의도동 45-3","sales":null,"floors":"지하 6층 / 지상 16층","area":26088.0,"use":"업무시설","units":728.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.519428,"lng":126.928376},{"name":"Next POC(F&F역삼사옥)","cls":"fail","year":25,"client":"삼우건축","b2":"B2B","order":"일반수주","po":"김대순","addr":"강남구 역삼동 662-5, 6, 9, 10","sales":97.72,"floors":"지하 2층 / 지상 6층","area":2756.13,"use":"업무시설","units":342.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.506166,"lng":127.040205},{"name":"PSK 용인캠퍼스","cls":"fail","year":26,"client":"PSK","b2":"B2B","order":"일반수주","po":"김대순","addr":"경기도 용인시 원삼면 반도체 클러스터 산업 A-4,5","sales":null,"floors":"지하 2층 / 지상 6층","area":44628.0,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · ICT","status":"경영진보고 完 (미적용)","lat":37.181132,"lng":127.321723},{"name":"PoC","cls":"fail","year":24,"client":"미래사업2본부","b2":"B2B","order":"일반수주","po":"이주병","addr":"성동구 성수이로 121","sales":10.0,"floors":"지하 1층 / 지상 4층","area":773.69,"use":"업무시설","units":36.0,"pkg":"스킨 · 공조 · 그리드","status":"시공 완료","lat":37.545872,"lng":127.057356},{"name":"R6","cls":"fail","year":24,"client":"삼성전자","b2":"B2B","order":"일반수주","po":"김대순","addr":"경기 수원시 영통구 매탄동 416일원","sales":null,"floors":"지하 6층 / 지상 10층","area":330594.83,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.255631,"lng":127.050775},{"name":"R7","cls":"fail","year":24,"client":"삼성전자","b2":"B2B","order":"일반수주","po":"김대순","addr":"-","sales":null,"floors":"-","area":null,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":35.355449,"lng":128.709628},{"name":"SIM 2.0 (R5)","cls":"fail","year":25,"client":"제일기획","b2":"B2B","order":"일반수주","po":"김대순","addr":"경기 수원시 영통구 삼성로 129","sales":null,"floors":"지상 6층","area":10950.0,"use":"전시시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.253841,"lng":127.045469},{"name":"SK D&D_성수동2가","cls":"fail","year":24,"client":"SK D&D","b2":"B2B","order":"일반수주","po":"김대순","addr":"성수동2가 301-102","sales":null,"floors":"지하 5층 / 지상 14층","area":43606.57,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.545106,"lng":127.051044},{"name":"SRA 상계빌딩","cls":"fail","year":25,"client":"삼우건축","b2":"B2B","order":"일반수주","po":"김대순","addr":"노원구 동일로1395","sales":null,"floors":"지하 5층 / 지상 15층","area":13860.09,"use":"업무시설","units":null,"pkg":"스킨 · 공조","status":"종료","lat":37.653199,"lng":127.060444},{"name":"강남파이낸스플라자","cls":"fail","year":23,"client":"","b2":"","order":"","po":"","addr":"강남구 테헤란로 419","sales":null,"floors":"지하 6층 / 지상 20층","area":24179.46,"use":"업무시설","units":null,"pkg":"","status":"종료","lat":37.505862,"lng":127.05218},{"name":"강낭358타워","cls":"fail","year":26,"client":"HDC자산운용","b2":"B2B","order":"일반수주","po":"김태완","addr":"강남구 강남대로 358","sales":939.4,"floors":"지하 7층/ 지상 20층","area":32685.65,"use":"업무시설","units":2047.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"검토서 송부","lat":37.49506,"lng":127.029795},{"name":"고흥 폐교","cls":"fail","year":24,"client":"-","b2":"B2B","order":"일반수주","po":"김대순","addr":"전라남도 고흥군 동강면 매곡리 413번지 일원","sales":null,"floors":"지상2층","area":null,"use":"교육시설","units":250.0,"pkg":"스킨","status":"종료","lat":34.802094,"lng":127.339084},{"name":"관수8지구 도시정비형재개발사업","cls":"fail","year":25,"client":"NH투자증권","b2":"B2B","order":"일반수주","po":"김대순","addr":"종로구 관수동 129-1번지 일원","sales":15.3,"floors":"지하 8층 / 지상 25층","area":50823.37,"use":"업무시설","units":23.0,"pkg":"스킨 · 공조 · ICT","status":"종료","lat":37.568573,"lng":126.990055},{"name":"광운대 서울원","cls":"fail","year":24,"client":"현대산업개발","b2":"B2B","order":"일반수주","po":"김대순","addr":"노원구 화랑로45길","sales":377.6,"floors":"지하 5층 / 지상 16층","area":null,"use":"업무시설","units":1128.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.615641,"lng":127.06585},{"name":"나진상가 12~13동","cls":"fail","year":24,"client":"서부T&D","b2":"B2B","order":"일반수주","po":"이신재","addr":"용산구 한강로3가 2-8, 2-22, 5-3, 22-12 번지","sales":null,"floors":"지하 7층 / 지상 26층","area":73583.36,"use":"업무시설","units":3100.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.532819,"lng":126.962424},{"name":"나진상가 4BL,5BL 개발","cls":"fail","year":23,"client":"용산라이프시티PFV\n(네오밸류)","b2":"B2B","order":"","po":"","addr":"용산구 한강로3가 3-23,3-43 (4BL) 용산구 한강로2가 15-2,15-39,12-18 (5BL)","sales":null,"floors":"지하 8층 / 지상 18층 (4BL)\n지하 7층 / 지상 33층 (5BL)","area":null,"use":"업무시설","units":null,"pkg":"","status":"종료","lat":37.533034,"lng":126.963729},{"name":"남산스퀘어","cls":"fail","year":25,"client":"HDC현대산업개발","b2":"B2B","order":"일반수주","po":"김대순","addr":"중구 충무로 3가 60-1","sales":1107.4,"floors":"지하 3층 / 지상 23층","area":75252.45,"use":"업무시설","units":4444.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.561502,"lng":126.981124},{"name":"네오플 제주 신사옥","cls":"fail","year":26,"client":"네오플","b2":"B2B","order":"일반수주","po":"이신재","addr":"제주시 노형동 75-10 외 5필지","sales":33.3,"floors":"지하4층 / 지하1층","area":7633.98,"use":"업무시설","units":180.0,"pkg":"스킨 · 공조","status":"검토서 송부","lat":33.472706,"lng":126.48475},{"name":"논현동 건우빌딩","cls":"fail","year":24,"client":"고려E&C","b2":"B2B","order":"일반수주","po":"김대순","addr":"강남구 강남대로 548 (논현동 120, 120-1, 120-2)","sales":null,"floors":"지하 3층 / 지상 10층","area":3160.0,"use":"업무시설","units":189.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.511041,"lng":127.021898},{"name":"뉴저지","cls":"fail","year":25,"client":"-","b2":"B2B","order":"일반수주","po":"김대순","addr":"-","sales":36.36,"floors":"지하 1층 / 지상 3층","area":null,"use":"업무시설","units":212.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.654646,"lng":126.771648},{"name":"동대문 두산타워 리모델링","cls":"fail","year":25,"client":"마스턴투자운용","b2":"B2B","order":"일반수주","po":"김대순","addr":"중구 청계천로 275","sales":null,"floors":"지하 7층 / 지상 34층","area":122630.26,"use":"업무시설, 판매시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.568836,"lng":127.008712},{"name":"모비우스 스퀘어","cls":"fail","year":25,"client":"코람코자산신탁","b2":"B2B","order":"간의검토","po":"","addr":"서울특별시 도봉구 방학동 707-6","sales":18.6,"floors":"지하 4층 / 지상 10층","area":22215.9,"use":"근린생활시설, \n문화 및 집회시설","units":69.0,"pkg":"스킨 · 공조 · ICT","status":"종료","lat":37.665337,"lng":127.043664},{"name":"봉래2지구 건축설계용역","cls":"fail","year":25,"client":"메리츠","b2":"B2B","order":"일반수주","po":"김대순","addr":"중구 봉래동1가 48-3 일원","sales":null,"floors":"지하 7층 / 지상 30층","area":62386.24,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.559319,"lng":126.972935},{"name":"서리풀 복합개발","cls":"fail","year":24,"client":"MDM","b2":"B2B","order":"일반수주","po":"김대순","addr":"서울 서초구 서초동 1005-6번지 일대","sales":null,"floors":"-","area":null,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.488916,"lng":127.002725},{"name":"서리풀복합개발","cls":"fail","year":26,"client":"엠디엠","b2":"B2B","order":"일반수주","po":"양준영","addr":"서초구 서초동 1005-6 일원","sales":913.0,"floors":"지하 7층/ 지상 19층","area":35070.56,"use":"업무시설","units":2720.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"검토서 송부","lat":37.488916,"lng":127.002725},{"name":"서소문 1지구10구역 사전검토","cls":"fail","year":25,"client":"","b2":"","order":"","po":"김대순","addr":"중구 순화동 39-2번지외 95필지","sales":null,"floors":"지하 6층 / 지상 19층","area":34172.72,"use":"업무시설","units":null,"pkg":"스킨 · 공조","status":"검토종료","lat":37.5626,"lng":126.9687},{"name":"서울역업무지구","cls":"fail","year":24,"client":"삼성물산","b2":"B2B","order":"일반수주","po":"이신재","addr":"중구 남대문로 5가 526번지 일대","sales":null,"floors":"지하 9층 / 지상 34층","area":79591.97,"use":"라운지","units":108.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"기술연구자문 용역 완료","lat":37.565271,"lng":126.98289},{"name":"서울파이낸스센터","cls":"fail","year":25,"client":"GIC","b2":"B2B","order":"일반수주","po":"김대순","addr":"서울 중구 세종대로 136","sales":null,"floors":"지하 8층 / 지상 30층","area":119397.67,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.568415,"lng":126.978284},{"name":"서초BSS","cls":"fail","year":25,"client":"삼성전자㈜","b2":"B2B","order":"","po":"이신재","addr":"","sales":null,"floors":"","area":null,"use":"문화집회시설","units":22.0,"pkg":"스킨 · 공조 · ICT","status":"?","lat":37.4837,"lng":127.0324},{"name":"서초로 특별계획구역","cls":"fail","year":25,"client":"코람코자산신탁","b2":"B2B","order":"간의검토","po":"김대순","addr":"서울특별시 강남구 서초동 1323-1번지 일대","sales":null,"floors":"","area":47044.63,"use":"","units":null,"pkg":"","status":"종료","lat":37.495692,"lng":127.022501},{"name":"성수동2가 277-10 오피스 개발사업","cls":"fail","year":26,"client":"쌍용","b2":"B2B","order":"","po":"김대순","addr":"성수동2가 277-10","sales":null,"floors":"지하 7층 / 지상 14층","area":null,"use":"업무시설","units":null,"pkg":"","status":"?","lat":37.548073,"lng":127.058663},{"name":"성수동개발(로호드)","cls":"fail","year":25,"client":"로호드파트너스","b2":"B2B","order":"일반수주","po":"김대순","addr":"성수동 2가 277-7,10 번지","sales":7.0,"floors":"지하 5층 / 지상 15층","area":64280.0,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.552569,"lng":127.046231},{"name":"성수동오피스","cls":"fail","year":26,"client":"쌍용","b2":"B2B","order":"","po":"김대순","addr":"","sales":213.7,"floors":"? / 지상 14층","area":null,"use":"업무시설","units":858.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"검토종료","lat":37.544171,"lng":127.054442},{"name":"수내역 티맥스","cls":"fail","year":23,"client":"이지스","b2":"B2B","order":"일반수주","po":"양준영","addr":"분당구 수내동 6-4번지","sales":432.83,"floors":"지하 5층 / 지상 12층","area":16578.68,"use":"업무시설","units":475.0,"pkg":"스킨 · 공조 · 그리드","status":"컨설팅 완료","lat":37.379237,"lng":127.116767},{"name":"수서역세권 공공주택지구 업무용지","cls":"fail","year":24,"client":"한국토지주택공사, 국가철도공사, \n서울주택도시공사","b2":"B2G","order":"간의검토","po":"김대순","addr":"서울특별시 강남구 자곡동 197-6 일원","sales":null,"floors":"지상 14층","area":3788.43,"use":"백화점, 호텔, \n오피스, 오피스텔","units":null,"pkg":"","status":"종료","lat":37.481861,"lng":127.105578},{"name":"수자원공사 본관 리뉴얼","cls":"fail","year":25,"client":"수자원공사","b2":"B2G","order":"","po":"김대순","addr":"대전 대덕구 연축동 184","sales":null,"floors":"지하 4층 / 지상 8층","area":30440.65,"use":"업무시설","units":4.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"홀딩","lat":36.397967,"lng":127.424562},{"name":"시티뱅크센터","cls":"fail","year":23,"client":"","b2":"","order":"","po":"","addr":"종로구 새문안로 50","sales":null,"floors":"지하 6층 / 지상 20층","area":36883.2,"use":"업무시설","units":2640.0,"pkg":"","status":"종료","lat":37.568953,"lng":126.970696},{"name":"신갈동 NR G&C 연구소","cls":"fail","year":25,"client":"NR G&C","b2":"B2B","order":"일반수주","po":"김대순","addr":"경기 용인시 기흥구 신갈동 399-1외2필지","sales":null,"floors":"지하 1층 / 지상 6층","area":9034.1,"use":"업무시설","units":49.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.277741,"lng":127.10073},{"name":"신사역역세권복합개발","cls":"fail","year":26,"client":"페블스톤","b2":"B2B","order":"일반수주","po":"양준영","addr":"강남구 논현동 17외 7필지","sales":null,"floors":"지하 9층 / 지상14층","area":31584.03,"use":"업무시설","units":null,"pkg":"스킨 · 공조","status":"검토서 송부","lat":37.515393,"lng":127.020211},{"name":"신세계백화점 대전점","cls":"fail","year":24,"client":"신세계","b2":"B2B","order":"일반수주","po":"김대순","addr":"대전 유성구 도룡동 648","sales":null,"floors":"지하 3층 / 지상 43층","area":284224.0,"use":"업무시설, 판매시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":36.375167,"lng":127.38193},{"name":"신세계센트럴_논현동개발","cls":"fail","year":25,"client":"신세계","b2":"B2B","order":"일반수주","po":"김태완","addr":"강남구 논현동 55-16외 4","sales":null,"floors":"지하 7층/ 지상 20층","area":45116.0,"use":"업무시설","units":null,"pkg":"스킨 · 공조","status":"검토서 송부","lat":37.512426,"lng":127.024817},{"name":"신중동 국민은행","cls":"fail","year":26,"client":"국민흔행","b2":"B2B","order":"일반수주","po":"김대순","addr":"부천시 원미구 소향로 245","sales":49.4,"floors":"지하 1층 / 지상 5층","area":4519.51,"use":"업무시설","units":432.0,"pkg":"스킨 · ICT","status":"종료","lat":37.50077,"lng":126.774986},{"name":"신한은행 청담센터 파사드","cls":"fail","year":25,"client":"신한은행","b2":"B2B","order":"일반수주","po":"박신영","addr":"강남구 압구정로 56길 6 (신사동 664-5,664-4, 664-30)","sales":105.0,"floors":"지하 2층 / 지상 6층","area":3722.14,"use":"업무시설","units":228.0,"pkg":"스킨 · 공조 · ICT","status":"종료","lat":37.527578,"lng":127.040026},{"name":"아남타워","cls":"fail","year":26,"client":"한화자산","b2":"B2B","order":"일반수주","po":"김태완","addr":"강남구 테헤란로 311","sales":null,"floors":"지하 6층 / 지상 20층","area":44083.78,"use":"업무시설","units":109.0,"pkg":"스킨 · 공조","status":"검토서 송부","lat":37.50369,"lng":127.044866},{"name":"아주디자인그룹 HQ","cls":"fail","year":24,"client":"아주디자인","b2":"B2B","order":"일반수주","po":"김대순","addr":"서울 강동구 고덕동 353-5","sales":5.98,"floors":"-","area":null,"use":"업무시설","units":24.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.556,"lng":127.154},{"name":"애플타워","cls":"fail","year":25,"client":"건물주","b2":"B2B","order":"일반수주","po":"이신재","addr":"송파구 잠실동 175번지","sales":null,"floors":"지하 6층 / 지상 17층","area":15673.54,"use":"업무시설","units":444.0,"pkg":"스킨 · 공조 · 그리드","status":"검토서 송부","lat":37.510543,"lng":127.079048},{"name":"여삼빌딩","cls":"fail","year":26,"client":"플래닛","b2":"B2B","order":"일반수주","po":"이민경","addr":"강남구 테헤란로 123","sales":null,"floors":"지하 -층 / 지상 17층","area":null,"use":"주거시설","units":null,"pkg":"스킨","status":"제안서 송부","lat":37.499555,"lng":127.031394},{"name":"역삼동 AP타워","cls":"fail","year":25,"client":"한국토지신탁","b2":"B2B","order":"일반수주","po":"김대순","addr":"강남구 719-1번지 외 6개 필지","sales":null,"floors":"지하 7층 / 지상 21층","area":33825.0,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.501519,"lng":127.040291},{"name":"용산특계B","cls":"fail","year":26,"client":"쌍용","b2":"B2B","order":"","po":"김대순","addr":"용산구 한강로2가 15-2","sales":539.8,"floors":"지하 9층 / 지상 25층","area":null,"use":"업무시설","units":2394.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"검토종료","lat":37.533913,"lng":126.965672},{"name":"용인동백","cls":"fail","year":23,"client":"삼성물산㈜","b2":"B2B","order":"","po":"","addr":"경기 용인시 기흥구 중동 1025","sales":null,"floors":"-","area":2644.6,"use":"TESTBED","units":null,"pkg":"","status":"종료","lat":37.257952,"lng":127.166471},{"name":"우리금융 여의도 오피스","cls":"fail","year":25,"client":"우리은행","b2":"B2B","order":"간의검토","po":"","addr":"서울특별시 거초구 서초동 1316-2, 3번지","sales":null,"floors":"지하 8층 / 지상 20층","area":31995.99,"use":"업무시설","units":1520.0,"pkg":"스킨 · 공조 · ICT","status":"종료","lat":37.530292,"lng":126.915401},{"name":"이노션 HQ","cls":"fail","year":24,"client":"이노션","b2":"B2B","order":"일반수주","po":"김대순","addr":"서초구 서초동 1316-2, 3번지","sales":null,"floors":"지하 8층 / 지상 20층","area":31995.99,"use":"업무시설","units":1316.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.498171,"lng":127.023964},{"name":"이화동 스튜디오","cls":"fail","year":26,"client":"-","b2":"B2B","order":"일반수주","po":"","addr":"-","sales":0.96,"floors":"-","area":null,"use":"-","units":2.0,"pkg":"공조","status":"견적서 송부","lat":37.577169,"lng":127.00272},{"name":"제3판교테크노밸리(금토지구) 9-3BL","cls":"fail","year":23,"client":"텐세그리티자산운용","b2":"B2B","order":"","po":"","addr":"성남시 금토지구 지식9-3","sales":null,"floors":"지하 3층 / 지상 12층","area":62830.82,"use":"지식산업센터/업무시설","units":null,"pkg":"","status":"종료","lat":37.421309,"lng":127.071745},{"name":"케이스퀘어 홍대","cls":"fail","year":25,"client":"코람코자산신탁","b2":"B2B","order":"간의검토","po":"조준영","addr":"마포구 동교동 159-5","sales":null,"floors":"지하 3층 / 지상 12층","area":11146.37,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · ICT","status":"종료","lat":37.55697,"lng":126.923309},{"name":"크래프톤_메가박스","cls":"fail","year":24,"client":"크래프톤","b2":"B2B","order":"일반수주","po":"이신재","addr":"성수동1가 656-335","sales":null,"floors":"지하 5층 / 지상  8층","area":24946.7,"use":"업무시설","units":54.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.541867,"lng":127.044978},{"name":"크레디트센터","cls":"fail","year":24,"client":"나이스 홀딩스","b2":"B2B","order":"일반수주","po":"김대순","addr":"마포구 아현동 686","sales":null,"floors":"지하 4층 / 지상 16층","area":15216.0,"use":"업무시설","units":1155.0,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.553664,"lng":126.956398},{"name":"타임워크 신도림","cls":"fail","year":24,"client":"이지스","b2":"B2B","order":"일반수주","po":"김대순","addr":"구로구 신도림동 692","sales":null,"floors":"지하 8층 / 지상 42층","area":350051.5,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · 그리드 · ICT","status":"종료","lat":37.508586,"lng":126.888903},{"name":"태평로빌딩","cls":"fail","year":26,"client":"이지스","b2":"B2B","order":"일반수주","po":"양준영","addr":"중구 세종대로 73","sales":463.66,"floors":"지하 6층 / 지상 26층","area":43577.27,"use":"업무시설","units":3001.0,"pkg":"스킨 · 공조 · 그리드","status":"기본설계 납품 완료","lat":37.562968,"lng":126.975961},{"name":"통합MP, 와부정수장","cls":"fail","year":25,"client":"수자원공사","b2":"B2G","order":"","po":"김대순","addr":"","sales":null,"floors":"","area":null,"use":"","units":null,"pkg":"","status":"종료","lat":37.600334,"lng":127.225337},{"name":"트위트리타워","cls":"fail","year":23,"client":"","b2":"","order":"","po":"","addr":"종로구 중학동 14번지","sales":null,"floors":"지하 8층 / 지상 17층","area":55685.34,"use":"업무시설","units":null,"pkg":"","status":"종료","lat":37.575433,"lng":126.97971},{"name":"한국화재보험협회","cls":"fail","year":25,"client":"한국화재보험","b2":"B2B","order":"일반수주","po":"김대순","addr":"여의도동 35-4, 7, 8번지","sales":null,"floors":"지하 8층 / 지상 33층","area":85241.95,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · ICT","status":"경영진보고 完 (미적용)","lat":37.521526,"lng":126.926321},{"name":"호수빌딩","cls":"fail","year":25,"client":"코람코자산신탁","b2":"B2B","order":"간의검토","po":"조준영","addr":"강남구 청담동 46-17","sales":null,"floors":"지하 2층 / 지상 8층","area":4307.51,"use":"업무시설","units":null,"pkg":"스킨 · 공조 · ICT","status":"종료","lat":37.519027,"lng":127.048444}];
 
     const map = L.map('map', {
         minZoom: 7,
@@ -280,11 +308,45 @@
     const guByName = {};
     BOUNDARIES.gu.features.forEach(f => { guByName[f.properties.name] = f; });
 
-    // 서울 자치구 기본 경계(연한 회색 아웃라인)
+    // 서울 자치구 기본 경계(연한 회색 아웃라인) — 비인터랙티브(호버 팝업/방해 없음)
     const guBaseLayer = L.geoJSON(BOUNDARIES.gu, {
-        style: { color: "#90A4AE", weight: 1, fillColor: "#B0BEC5", fillOpacity: 0.04 },
-        onEachFeature: (f, l) => l.bindTooltip(f.properties.name, { sticky: true, opacity: 0.9 })
+        interactive: false,
+        style: { color: "#90A4AE", weight: 1, fillColor: "#B0BEC5", fillOpacity: 0.04 }
     });
+
+    /* ===== 권역 분류 (점-in-폴리곤, ray casting) ===== */
+    function ptInRing(lng, lat, ring) {
+        let inside = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+            if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+        }
+        return inside;
+    }
+    function ptInGeom(lng, lat, geom) {
+        const polys = geom.type === "MultiPolygon" ? geom.coordinates : [geom.coordinates];
+        for (const poly of polys) {
+            if (ptInRing(lng, lat, poly[0])) {
+                let inHole = false;
+                for (let k = 1; k < poly.length; k++) if (ptInRing(lng, lat, poly[k])) inHole = true;
+                if (!inHole) return true;
+            }
+        }
+        return false;
+    }
+    const CBD_GU = ["종로구", "중구"], GBD_GU = ["강남구", "서초구"];
+    function regionOf(lat, lng) {
+        if (BOUNDARIES.yeouido && ptInGeom(lng, lat, BOUNDARIES.yeouido.geometry)) return "YBD";
+        for (const g of CBD_GU) { const f = guByName[g]; if (f && ptInGeom(lng, lat, f.geometry)) return "CBD"; }
+        for (const g of GBD_GU) { const f = guByName[g]; if (f && ptInGeom(lng, lat, f.geometry)) return "GBD"; }
+        return "기타";
+    }
+    const REGION_META = [
+        { key: "CBD", color: "#8E24AA" },
+        { key: "YBD", color: "#F4511E" },
+        { key: "GBD", color: "#00897B" },
+        { key: "기타", color: "#B0BEC5" }
+    ];
 
     // 권역별 컬러 레이어 (실제 경계 폴리곤)
     const zoneLayers = {};
@@ -315,19 +377,26 @@
     zones.forEach(z => zoneLayers[z.key].addTo(map));
 
     projects.forEach((p) => {
-        const color = getStepColor(p.stage);
-        const volText = p.vol === '검토중' ? '검토중' : p.vol + '개';
-        
+        p.region = regionOf(p.lat, p.lng);
+        const color = clsColor(p.cls);
+        const b2Tag = p.b2 ? ` <span style="font-size:9px; padding:1px 4px; border-radius:3px; background:#EEF2F7; color:#5A6B7B;">${p.b2}</span>` : '';
+        const salesText = p.sales ? `${fmtN(p.sales)}억` : '-';
+        const scaleText = [p.floors, fmtArea(p.area)].filter(Boolean).join(' / ') || '-';
+        const useText = [p.use, (p.units ? fmtN(p.units) + '유닛' : '')].filter(Boolean).join(' / ') || '-';
+
         const card = document.createElement('div');
         card.className = 'project-card';
         card.innerHTML = `
-            <span class="status-badge" style="background:${color}">${p.stage}</span>
+            <span class="status-badge" style="background:${color}">${clsLabel(p.cls)}</span>
             <span class="card-name">${p.name}</span>
             <div class="card-info">
-                🏢 <b>발주(관계):</b> ${p.client}(${p.partner})<br>
-                📐 <b>규모:</b> ${p.floor} / ${p.area}<br>
-                📦 <b>물량:</b> ${volText}<br>
-                🛠 <b>패키징:</b> ${p.pkg}
+                🏢 <b>발주처:</b> ${p.client || '-'}${b2Tag}<br>
+                🧭 <b>수주형태:</b> ${p.order || '-'}${p.po ? ` / PO ${p.po}` : ''}<br>
+                📐 <b>규모:</b> ${scaleText}<br>
+                🏷 <b>용도:</b> ${useText}<br>
+                💰 <b>매출(예상):</b> ${salesText}<br>
+                🛠 <b>패키징:</b> ${p.pkg || '-'}<br>
+                📌 <b>추진현황:</b> ${p.status || '-'}
             </div>
         `;
         card.onclick = () => { map.flyTo([p.lat, p.lng], 14); pin.openTooltip(); };
@@ -335,18 +404,30 @@
 
         const pin = L.circleMarker([p.lat, p.lng], { radius: 7, fillColor: color, color: "#fff", weight: 2, fillOpacity: 0.9, pane: "projectPins" }).addTo(projectLayer);
         const tooltipHtml = `
-            <div style="font-weight:700; color:${color}; font-size:13px; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom:5px;">${p.name}</div>
+            <div style="font-weight:700; color:${color}; font-size:13px; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom:5px;">
+                ${p.name} <span style="font-size:10px; color:#fff; background:${color}; padding:1px 5px; border-radius:3px;">${clsLabel(p.cls)}</span>
+            </div>
             <div style="font-size:11px; line-height:1.6;">
-                🏢 <b>발주(관계):</b> ${p.client}(${p.partner})<br>
-                🏠 <b>규모:</b> ${p.area} / ${p.floor}<br>
-                📦 <b>수량:</b> <b style="color:#333;">${volText}</b><br>
-                🛠 <b>패키징:</b> <span style="color:${color}; font-weight:bold;">${p.pkg}</span>
+                🏢 <b>발주처:</b> ${p.client || '-'}${b2Tag}<br>
+                🧭 <b>수주형태:</b> ${p.order || '-'}${p.po ? ` / PO ${p.po}` : ''}<br>
+                📐 <b>규모:</b> ${scaleText}<br>
+                🏷 <b>용도:</b> ${useText}<br>
+                💰 <b>매출(예상):</b> <b style="color:#333;">${salesText}</b><br>
+                🛠 <b>패키징:</b> <span style="color:${color}; font-weight:bold;">${p.pkg || '-'}</span><br>
+                📌 <b>추진현황:</b> ${p.status || '-'}
             </div>
         `;
         pin.on('mouseover', function() { this.setRadius(12); });
         pin.on('mouseout', function() { this.setRadius(7); });
-        markers.push({ pin, data: p, color, tooltipHtml });
+        markers.push({ pin, data: p, color, tooltipHtml, card });
     });
+
+    // 겹칠 때 성공 > 진행중 > 실패 순으로 위에 오도록 z-order 정렬
+    function restackPins() {
+        markers.filter(m => m.data.cls === 'ongoing').forEach(m => m.pin.bringToFront());
+        markers.filter(m => m.data.cls === 'success').forEach(m => m.pin.bringToFront());
+    }
+    restackPins();
 
     /* ===== 레이어 토글 컨트롤 ===== */
     const LayerToggle = L.Control.extend({
@@ -471,49 +552,150 @@
     });
     map.addControl(new LayerToggle());
 
+    function makeLabel(m, lLat, lLng) {
+        const d = m.data;
+        const scaleText = [d.floors, fmtArea(d.area)].filter(Boolean).join(' / ') || '-';
+        const salesText = d.sales ? `${fmtN(d.sales)}억` : '-';
+        const labelHtml = `
+            <div class="draggable-label-container" style="border-color: ${m.color};">
+                <span class="label-title" style="color: ${m.color};">${d.name}</span>
+                <span class="section-tag">[발주처 / 수주형태]</span>
+                <span class="label-content">${d.client || '-'}${d.b2 ? ' (' + d.b2 + ')' : ''} · ${d.order || '-'}</span>
+                <span class="section-tag">[규모 / 패키징]</span>
+                <span class="label-content">${scaleText}</span>
+                <span class="label-content">🛠 <b>${d.pkg || '-'}</b></span>
+                <span class="label-content" style="border-top:1px dashed #eee; margin-top:5px; padding-top:4px;">💰 매출(예상): <b>${salesText}</b> · 📌 ${d.status || '-'}</span>
+            </div>`;
+        const labelIcon = L.divIcon({ html: labelHtml, className: '', iconAnchor: [125, 60] });
+        const labelMarker = L.marker([lLat, lLng], { icon: labelIcon, draggable: true }).addTo(draggableGroup);
+        const polyline = L.polyline([[d.lat, d.lng], [lLat, lLng]], { color: m.color, weight: 1.5, dashArray: '6, 6', opacity: 0.4 }).addTo(draggableGroup);
+        labelMarker.on('drag', (ev) => polyline.setLatLngs([[d.lat, d.lng], ev.target.getLatLng()]));
+    }
+
     function updateMode() {
         const isLabelMode = document.getElementById('mode-toggle').checked;
         draggableGroup.clearLayers();
 
         if (isLabelMode) {
             document.body.classList.add('full-map-mode');
-            const b = map.getBounds();
-            const n = b.getNorth(), s = b.getSouth(), e = b.getEast(), w = b.getWest();
-
-            markers.forEach((m, i) => {
-                m.pin.unbindTooltip();
-                let lLat, lLng;
-                if (i < 4) { lLat = n - ((n - s) / 5 * (i + 1)); lLng = w + (e - w) * 0.12; } 
-                else if (i < 8) { lLat = n - ((n - s) / 5 * (i - 3)); lLng = e - (e - w) * 0.12; } 
-                else if (i < 11) { lLat = n - (n - s) * 0.1; lLng = w + ((e - w) / 4 * (i - 7)); } 
-                else { lLat = s + (n - s) * 0.1; lLng = w + ((e - w) / 4 * (i - 10)); }
-
-                const volLabel = m.data.vol === '검토중' ? '검토중' : m.data.vol + '개';
-
-                const labelHtml = `
-                    <div class="draggable-label-container" style="border-color: ${m.color};">
-                        <span class="label-title" style="color: ${m.color};">${m.data.name}</span>
-                        <span class="section-tag">[발주 및 관계]</span>
-                        <span class="label-content">${m.data.client}(${m.data.partner})</span>
-                        <span class="section-tag">[규모 및 패키징]</span>
-                        <span class="label-content">${m.data.floor} / ${m.data.area}</span>
-                        <span class="label-content">🛠 <b>${m.data.pkg}</b></span>
-                        <span class="label-content" style="border-top:1px dashed #eee; margin-top:5px; padding-top:4px;">📦 수량: <b>${volLabel}</b></span>
-                    </div>
-                `;
-                const labelIcon = L.divIcon({ html: labelHtml, className: '', iconAnchor: [125, 60] });
-                const labelMarker = L.marker([lLat, lLng], { icon: labelIcon, draggable: true }).addTo(draggableGroup);
-                const polyline = L.polyline([[m.data.lat, m.data.lng], [lLat, lLng]], { color: m.color, weight: 1.5, dashArray: '6, 6', opacity: 0.4 }).addTo(draggableGroup);
-                labelMarker.on('drag', (ev) => polyline.setLatLngs([[m.data.lat, m.data.lng], ev.target.getLatLng()]));
-            });
+            markers.forEach(m => m.pin.unbindTooltip());
+            setTimeout(() => map.invalidateSize(), 300);
+            setTimeout(() => {
+                // 현재 뷰 기준으로 라벨을 화면 외곽(가장 가까운 가장자리)에 고르게 배치
+                const b = map.getBounds();
+                const n = b.getNorth(), s = b.getSouth(), e = b.getEast(), w = b.getWest();
+                const insetLat = (n - s) * 0.05, insetLng = (e - w) * 0.05;
+                const vis = markers.filter(m => m.data.year <= selectedYear);
+                const sides = { left: [], right: [], top: [], bottom: [] };
+                vis.forEach(m => {
+                    const dl = m.data.lng - w, dr = e - m.data.lng, dt = n - m.data.lat, db = m.data.lat - s;
+                    const mn = Math.min(dl, dr, dt, db);
+                    if (mn === dl) sides.left.push(m);
+                    else if (mn === dr) sides.right.push(m);
+                    else if (mn === dt) sides.top.push(m);
+                    else sides.bottom.push(m);
+                });
+                Object.keys(sides).forEach(kind => {
+                    const arr = sides[kind];
+                    if (kind === 'left' || kind === 'right') arr.sort((a, b2) => b2.data.lat - a.data.lat);
+                    else arr.sort((a, b2) => a.data.lng - b2.data.lng);
+                    arr.forEach((m, idx) => {
+                        const f = (idx + 1) / (arr.length + 1);
+                        let lLat, lLng;
+                        if (kind === 'left') { lLng = w + insetLng; lLat = n - (n - s) * f; }
+                        else if (kind === 'right') { lLng = e - insetLng; lLat = n - (n - s) * f; }
+                        else if (kind === 'top') { lLat = n - insetLat; lLng = w + (e - w) * f; }
+                        else { lLat = s + insetLat; lLng = w + (e - w) * f; }
+                        makeLabel(m, lLat, lLng);
+                    });
+                });
+            }, 360);
         } else {
             document.body.classList.remove('full-map-mode');
             markers.forEach(m => m.pin.bindTooltip(m.tooltipHtml, { direction: 'top', opacity: 1 }));
+            setTimeout(() => map.invalidateSize(), 300);
         }
-        setTimeout(() => map.invalidateSize(), 400);
     }
 
+    /* ===== 연도 슬라이더 + 권역 분석(파이/성공률) ===== */
+    const YEARS = [...new Set(projects.map(p => p.year))].sort((a, b) => a - b);
+    const MIN_YEAR = YEARS[0], MAX_YEAR = YEARS[YEARS.length - 1];
+    let selectedYear = MAX_YEAR;
+    const yr = n => 2000 + Number(n);   // 26 -> 2026
+
+    function drawPie(counts) {
+        const total = REGION_META.reduce((s, r) => s + counts[r.key], 0);
+        const svg = document.getElementById('pie');
+        if (!total) { svg.innerHTML = '<circle cx="60" cy="60" r="52" fill="#EDF2F7"/>'; return; }
+        let ang = -Math.PI / 2, parts = '';
+        const cx = 60, cy = 60, rad = 52;
+        REGION_META.forEach(r => {
+            const v = counts[r.key]; if (!v) return;
+            const frac = v / total, a2 = ang + frac * 2 * Math.PI;
+            if (frac >= 0.999) {   // 단일 권역 100%
+                parts += `<circle cx="${cx}" cy="${cy}" r="${rad}" fill="${r.color}"/>`;
+            } else {
+                const x1 = cx + rad * Math.cos(ang), y1 = cy + rad * Math.sin(ang);
+                const x2 = cx + rad * Math.cos(a2), y2 = cy + rad * Math.sin(a2);
+                const large = frac > 0.5 ? 1 : 0;
+                parts += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${rad},${rad} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${r.color}"/>`;
+            }
+            ang = a2;
+        });
+        parts += `<circle cx="${cx}" cy="${cy}" r="26" fill="#fff"/><text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="15" font-weight="800" fill="#2d3748">${total}</text><text x="${cx}" y="${cy + 12}" text-anchor="middle" font-size="8" fill="#A0AEC0">건</text>`;
+        svg.innerHTML = parts;
+    }
+
+    function renderAnalytics(visible) {
+        const counts = { CBD: 0, YBD: 0, GBD: 0, "기타": 0 };
+        const prog = { CBD: 0, YBD: 0, GBD: 0, "기타": 0 };   // 진행중 건수
+        visible.forEach(m => {
+            const rg = m.data.region; counts[rg]++;
+            if (m.data.cls === 'ongoing') prog[rg]++;
+        });
+        drawPie(counts);
+        const total = REGION_META.reduce((s, r) => s + counts[r.key], 0);
+        document.getElementById('pie-legend').innerHTML = REGION_META.map(r => {
+            const v = counts[r.key], pct = total ? Math.round(100 * v / total) : 0;
+            return `<div class="pl-item"><span class="pl-dot" style="background:${r.color}"></span>${r.key} ${v} (${pct}%)</div>`;
+        }).join('');
+        const maxProg = Math.max(1, ...REGION_META.map(r => prog[r.key]));
+        document.getElementById('rates').innerHTML = REGION_META.map(r => {
+            const c = prog[r.key], w = Math.round(100 * c / maxProg);
+            return `<div class="rate-row">
+                <div class="rate-head"><b>${r.key}</b><span style="color:${r.color}">${c}건</span></div>
+                <div class="rate-bar"><div class="rate-fill" style="width:${w}%; background:${r.color}"></div></div>
+            </div>`;
+        }).join('');
+    }
+
+    function applyYear(year) {
+        selectedYear = year;
+        let shown = 0;
+        markers.forEach(m => {
+            const vis = m.data.year <= year;
+            if (vis) { if (!projectLayer.hasLayer(m.pin)) m.pin.addTo(projectLayer); shown++; }
+            else if (projectLayer.hasLayer(m.pin)) projectLayer.removeLayer(m.pin);
+            if (m.card) m.card.style.display = vis ? '' : 'none';
+        });
+        restackPins();
+        const visMarkers = markers.filter(m => m.data.year <= year);
+        renderAnalytics(visMarkers);
+        document.getElementById('year-cur').textContent = yr(year);
+        document.getElementById('year-count').innerHTML = `누적 <b>${shown}</b>건 / 전체 ${markers.length}건`;
+        if (document.getElementById('mode-toggle').checked) updateMode();
+    }
+
+    // 슬라이더 초기화
+    (function initYearSlider() {
+        const rng = document.getElementById('year-range');
+        rng.min = MIN_YEAR; rng.max = MAX_YEAR; rng.step = 1; rng.value = MAX_YEAR;
+        document.getElementById('year-ticks').innerHTML = YEARS.map(y => `<span>'${y}</span>`).join('');
+        rng.addEventListener('input', e => applyYear(Number(e.target.value)));
+    })();
+
     document.getElementById('mode-toggle').addEventListener('change', updateMode);
+    applyYear(MAX_YEAR);
     updateMode();
 </script>
 </body>
