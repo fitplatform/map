@@ -357,9 +357,9 @@
             .map(m => z.source === "dong" ? BOUNDARIES.yeouido : guByName[m])
             .filter(Boolean);
         const gj = L.geoJSON({ type: "FeatureCollection", features: feats }, {
+            interactive: false,   // 호버 시 권역명 말풍선 안 뜨게 + 핀 호버 방해 없음
             style: { color: z.color, weight: 2.5, fillColor: z.color, fillOpacity: 0.28 }
         }).addTo(group);
-        gj.bindTooltip(z.name, { sticky: true, direction: "top", opacity: 0.95 });
         // 권역 중심에 약어 라벨
         const c = gj.getBounds().getCenter();
         L.marker(c, {
@@ -688,7 +688,7 @@
 
         if (isLabelMode) {
             document.body.classList.add('full-map-mode');
-            markers.forEach(m => m.pin.unbindTooltip());
+            markers.forEach(m => m.pin.bindTooltip(m.tooltipHtml, { direction: 'top', opacity: 1 }));
             if (!labelMoveHandler) { labelMoveHandler = () => placeLabels(); map.on('moveend zoomend', labelMoveHandler); }
             setTimeout(() => { map.invalidateSize(); placeLabels(); }, 320);
         } else {
