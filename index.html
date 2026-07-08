@@ -32,14 +32,14 @@
         .sidebar { width: 340px; display: flex; flex-direction: column; background: #ffffff; border-left: 1px solid var(--border); z-index: 2; box-shadow: -2px 0 10px rgba(0,0,0,0.03); }
         .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); background: #fcfcfc; }
         .sidebar-content { padding: 10px; overflow-y: auto; flex: 1; background: #f9f9f9; }
-        body.full-map-mode .sidebar, body.full-map-mode .leftbar { display: none; }
+        /* 라벨 모드에서도 좌우 사이드탭은 항상 표시 (숨기지 않음) */
 
         /* 좌측 수직 분석 바 */
         .leftbar { width: 250px; flex-shrink: 0; display: flex; flex-direction: column; gap: 0;
             background: #ffffff; border-right: 1px solid var(--border); z-index: 2;
             box-shadow: 2px 0 10px rgba(0,0,0,0.03); overflow-y: auto; }
         .leftbar-section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
-        .lb-title { font-size: 12px; font-weight: 700; color: #2d3748; margin-bottom: 12px; }
+        .lb-title { font-size: 15px; font-weight: 700; color: #2d3748; margin-bottom: 12px; }
         .year-display { font-size: 13px; color: #718096; margin-bottom: 8px; }
         .year-display #year-cur { font-size: 26px; font-weight: 800; color: var(--accent); margin-right: 4px; }
         #year-range { accent-color: var(--accent); cursor: pointer; margin: 2px 0; }
@@ -98,7 +98,7 @@
         .layer-panel {
             background: white; padding: 12px 14px; border-radius: 10px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.12); font-size: 12px;
-            min-width: 160px;
+            width: 196px; box-sizing: border-box;
         }
         .layer-panel .lp-title {
             font-size: 10px; font-weight: 700; color: #A0AEC0; text-transform: uppercase;
@@ -117,6 +117,11 @@
             border: 1.5px solid; display: inline-block;
         }
         .layer-panel .lp-soon { font-size: 9px; color: #CBD5E0; margin-left: auto; font-weight: 600; }
+        .layer-panel .lp-sub { font-size: 10px; font-weight: 700; color: #A0AEC0; margin: 10px 0 5px 0; }
+        .layer-panel .lbl-radio { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #4a5568; padding: 2px 0; cursor: pointer; }
+        .layer-panel .lbl-radio input { accent-color: var(--accent); cursor: pointer; }
+        .layer-panel .legend-item { display: flex; align-items: center; margin: 3px 0; font-size: 11px; color: #4a5568; }
+        .layer-panel .legend-color { width: 11px; height: 11px; border-radius: 50%; margin-right: 7px; flex-shrink: 0; }
 
         .zone-label {
             background: transparent; border: none; box-shadow: none;
@@ -132,12 +137,8 @@
 
 <header>
     <h1>🏢 프로젝트 통합 관리 <small style="font-weight: 300; font-size: 12px; color: #999; margin-left: 10px;">Smart Dashboard</small></h1>
-    <div class="switch-container">
-        Label Mode
-        <label class="switch">
-            <input type="checkbox" id="mode-toggle">
-            <span class="slider"></span>
-        </label>
+    <div class="switch-container" style="font-size:11px; color:#A0AEC0; font-weight:500;">
+        지도 우측 패널에서 레이어·라벨 제어
     </div>
 </header>
 
@@ -567,12 +568,61 @@
     });
     map.addControl(new LayerToggle());
 
-    function makeLabel(m, lLat, lLng) {
+    /* ===== 라벨 모드 플로팅 패널 (레이어 패널 아래) ===== */
+    const LabelControl = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function () {
+            const div = L.DomUtil.create('div', 'layer-panel');
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
+            const legend = ['success', 'ongoing', 'fail'].map(k =>
+                `<div class="legend-item"><div class="legend-color" style="background:${CLS_META[k].color}"></div> ${CLS_META[k].label}</div>`).join('');
+            div.innerHTML = `
+                <div class="lp-title">🏷 라벨 모드</div>
+                <label>
+                    <input type="checkbox" class="label-toggle">
+                    <span class="lp-swatch" style="border-color:#1565C0; background:#1565C022;"></span>
+                    라벨 표시
+                </label>
+                <div class="label-opts" style="display:none;">
+                    <div class="lp-sub">정렬 기준 <span style="font-weight:400; color:#CBD5E0;">· 성공·진행중 항상 표시</span></div>
+                    <label class="lbl-radio"><input type="radio" name="lblsort" value="area" checked> 규모(면적)</label>
+                    <label class="lbl-radio"><input type="radio" name="lblsort" value="units"> 유닛수</label>
+                    <div class="lp-sub">투명도 <span class="op-val" style="color:#1565C0;">100%</span></div>
+                    <input type="range" class="label-opacity" min="30" max="100" value="100" style="width:100%; accent-color:var(--accent); cursor:pointer;">
+                    <div class="lp-sub">색상 범례</div>
+                    ${legend}
+                    <div id="label-count" style="margin-top:8px; font-size:10px; color:#A0AEC0;"></div>
+                </div>`;
+
+            const optsEl = div.querySelector('.label-opts');
+            div.querySelector('.label-toggle').addEventListener('change', function () {
+                labelModeOn = this.checked;
+                optsEl.style.display = this.checked ? 'block' : 'none';
+                updateMode();
+            });
+            const opVal = div.querySelector('.op-val');
+            div.querySelector('.label-opacity').addEventListener('input', function () {
+                labelOpacity = this.value / 100;
+                opVal.textContent = this.value + '%';
+                if (labelModeOn) placeLabels();
+            });
+            div.querySelectorAll('input[name="lblsort"]').forEach(r =>
+                r.addEventListener('change', function () {
+                    if (this.checked) { labelSortKey = this.value; if (labelModeOn) placeLabels(); }
+                }));
+            return div;
+        }
+    });
+    map.addControl(new LabelControl());
+
+    // 라벨을 (좌상단 기준) 특정 위치에 생성
+    function makeLabel(m, tlLat, tlLng) {
         const d = m.data;
         const scaleText = [d.floors, fmtArea(d.area)].filter(Boolean).join(' / ') || '-';
         const salesText = d.sales ? `${fmtN(d.sales)}억` : '-';
         const labelHtml = `
-            <div class="draggable-label-container" style="border-color: ${m.color};">
+            <div class="draggable-label-container" style="border-color: ${m.color}; opacity:${labelOpacity};">
                 <span class="label-title" style="color: ${m.color};">${d.name}</span>
                 <span class="section-tag">[발주처 / 수주형태]</span>
                 <span class="label-content">${d.client || '-'}${d.b2 ? ' (' + d.b2 + ')' : ''} · ${d.order || '-'}</span>
@@ -581,52 +631,69 @@
                 <span class="label-content">🛠 <b>${d.pkg || '-'}</b></span>
                 <span class="label-content" style="border-top:1px dashed #eee; margin-top:5px; padding-top:4px;">💰 매출(예상): <b>${salesText}</b> · 📌 ${d.status || '-'}</span>
             </div>`;
-        const labelIcon = L.divIcon({ html: labelHtml, className: '', iconAnchor: [125, 60] });
-        const labelMarker = L.marker([lLat, lLng], { icon: labelIcon, draggable: true }).addTo(draggableGroup);
-        const polyline = L.polyline([[d.lat, d.lng], [lLat, lLng]], { color: m.color, weight: 1.5, dashArray: '6, 6', opacity: 0.4 }).addTo(draggableGroup);
+        const labelIcon = L.divIcon({ html: labelHtml, className: '', iconAnchor: [0, 0] });
+        const labelMarker = L.marker([tlLat, tlLng], { icon: labelIcon, draggable: true }).addTo(draggableGroup);
+        const polyline = L.polyline([[d.lat, d.lng], [tlLat, tlLng]], { color: m.color, weight: 1.5, dashArray: '6, 6', opacity: 0.5 * labelOpacity }).addTo(draggableGroup);
         labelMarker.on('drag', (ev) => polyline.setLatLngs([[d.lat, d.lng], ev.target.getLatLng()]));
     }
 
+    // 반응형 라벨 배치:
+    //  ① 화면에 보이는 점만  ② 성공·진행중은 무조건 표시(고정)  ③ 나머지는 정렬기준(규모/유닛수) 순 + 겹치지 않는 만큼만
+    const LABEL_W = 268, LABEL_H = 150, LABEL_GAP = 8;
+    let labelSortKey = 'area';   // 'area'(규모) | 'units'(유닛수)
+    const OFFS = [[14, -LABEL_H / 2], [-LABEL_W - 14, -LABEL_H / 2], [14, 10], [-LABEL_W - 14, 10], [14, -LABEL_H - 10], [-LABEL_W - 14, -LABEL_H - 10]];
+    function placeLabels() {
+        draggableGroup.clearLayers();
+        const b = map.getBounds(), size = map.getSize();
+        const cands = markers.filter(m => m.data.year <= selectedYear && b.contains([m.data.lat, m.data.lng]));
+        const key = labelSortKey;
+        const byKey = (a, z) => ((z.data[key] || 0) - (a.data[key] || 0));
+        const forced = cands.filter(m => m.data.cls === 'success' || m.data.cls === 'ongoing').sort(byKey); // 무조건 표시
+        const rest = cands.filter(m => m.data.cls === 'fail').sort(byKey);
+        const placed = [];
+        const overlaps = box => placed.some(o =>
+            !(box.x2 + LABEL_GAP < o.x1 || box.x1 > o.x2 + LABEL_GAP || box.y2 + LABEL_GAP < o.y1 || box.y1 > o.y2 + LABEL_GAP));
+        function tryPlace(m, force) {
+            const pt = map.latLngToContainerPoint([m.data.lat, m.data.lng]);
+            let chosen = null;
+            for (const [ox, oy] of OFFS) {
+                const box = { x1: pt.x + ox, y1: pt.y + oy, x2: pt.x + ox + LABEL_W, y2: pt.y + oy + LABEL_H };
+                if (box.x1 < -30 || box.y1 < -30 || box.x2 > size.x + 30 || box.y2 > size.y + 30) continue;
+                if (overlaps(box)) continue;
+                chosen = box; break;
+            }
+            if (!chosen) {
+                if (!force) return false;                    // 나머지: 자리 없으면 생략
+                const [ox, oy] = OFFS[0];                     // 성공·진행중: 자리 없어도 강제 표시
+                chosen = { x1: pt.x + ox, y1: pt.y + oy, x2: pt.x + ox + LABEL_W, y2: pt.y + oy + LABEL_H };
+            }
+            placed.push(chosen);
+            const tl = map.containerPointToLatLng([chosen.x1, chosen.y1]);
+            makeLabel(m, tl.lat, tl.lng);
+            return true;
+        }
+        let shown = 0;
+        forced.forEach(m => { if (tryPlace(m, true)) shown++; });   // 성공·진행중 먼저(무조건)
+        rest.forEach(m => { if (tryPlace(m, false)) shown++; });    // 실패는 남는 자리에만
+        const badge = document.getElementById('label-count');
+        if (badge) badge.textContent = `라벨 ${shown} / 화면 내 ${cands.length}건 (필수 ${forced.length})`;
+    }
+
+    let labelMoveHandler = null;
+    let labelModeOn = false;
+    let labelOpacity = 1;
     function updateMode() {
-        const isLabelMode = document.getElementById('mode-toggle').checked;
+        const isLabelMode = labelModeOn;
         draggableGroup.clearLayers();
 
         if (isLabelMode) {
             document.body.classList.add('full-map-mode');
             markers.forEach(m => m.pin.unbindTooltip());
-            setTimeout(() => map.invalidateSize(), 300);
-            setTimeout(() => {
-                // 현재 뷰 기준으로 라벨을 화면 외곽(가장 가까운 가장자리)에 고르게 배치
-                const b = map.getBounds();
-                const n = b.getNorth(), s = b.getSouth(), e = b.getEast(), w = b.getWest();
-                const insetLat = (n - s) * 0.05, insetLng = (e - w) * 0.05;
-                const vis = markers.filter(m => m.data.year <= selectedYear);
-                const sides = { left: [], right: [], top: [], bottom: [] };
-                vis.forEach(m => {
-                    const dl = m.data.lng - w, dr = e - m.data.lng, dt = n - m.data.lat, db = m.data.lat - s;
-                    const mn = Math.min(dl, dr, dt, db);
-                    if (mn === dl) sides.left.push(m);
-                    else if (mn === dr) sides.right.push(m);
-                    else if (mn === dt) sides.top.push(m);
-                    else sides.bottom.push(m);
-                });
-                Object.keys(sides).forEach(kind => {
-                    const arr = sides[kind];
-                    if (kind === 'left' || kind === 'right') arr.sort((a, b2) => b2.data.lat - a.data.lat);
-                    else arr.sort((a, b2) => a.data.lng - b2.data.lng);
-                    arr.forEach((m, idx) => {
-                        const f = (idx + 1) / (arr.length + 1);
-                        let lLat, lLng;
-                        if (kind === 'left') { lLng = w + insetLng; lLat = n - (n - s) * f; }
-                        else if (kind === 'right') { lLng = e - insetLng; lLat = n - (n - s) * f; }
-                        else if (kind === 'top') { lLat = n - insetLat; lLng = w + (e - w) * f; }
-                        else { lLat = s + insetLat; lLng = w + (e - w) * f; }
-                        makeLabel(m, lLat, lLng);
-                    });
-                });
-            }, 360);
+            if (!labelMoveHandler) { labelMoveHandler = () => placeLabels(); map.on('moveend zoomend', labelMoveHandler); }
+            setTimeout(() => { map.invalidateSize(); placeLabels(); }, 320);
         } else {
             document.body.classList.remove('full-map-mode');
+            if (labelMoveHandler) { map.off('moveend zoomend', labelMoveHandler); labelMoveHandler = null; }
             markers.forEach(m => m.pin.bindTooltip(m.tooltipHtml, { direction: 'top', opacity: 1 }));
             setTimeout(() => map.invalidateSize(), 300);
         }
@@ -698,7 +765,7 @@
         renderAnalytics(visMarkers);
         document.getElementById('year-cur').textContent = yr(year);
         document.getElementById('year-count').innerHTML = `누적 <b>${shown}</b>건 / 전체 ${markers.length}건`;
-        if (document.getElementById('mode-toggle').checked) updateMode();
+        if (labelModeOn) updateMode();
     }
 
     // 슬라이더 초기화
@@ -709,7 +776,6 @@
         rng.addEventListener('input', e => applyYear(Number(e.target.value)));
     })();
 
-    document.getElementById('mode-toggle').addEventListener('change', updateMode);
     applyYear(MAX_YEAR);
     updateMode();
 </script>
